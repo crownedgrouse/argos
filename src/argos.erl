@@ -29,7 +29,7 @@
 
 %-export([encode/1, encode/2]).
 -export([decode/1, decode/2]).
-%-export([decode_file/1, decode_file/2]).
+-export([decode_file/1, decode_file/2]).
 %-export([encode_file/2, encode_file/3]).
 %-export([pp/1, pp/2, types/0]).
 %-export([dump/1, dump/2]).
@@ -49,7 +49,6 @@ decode(D) when is_list(D)
     -> 
         decode(erlang:list_to_binary(D)).
 
-
 %% ----------------------------------
 %% @doc decode/2
 %% 
@@ -63,3 +62,45 @@ decode(D, O) when is_binary(D), is_list(O)
 decode(D, Opt) when is_binary(D), is_record(Opt, opt)
     -> 
         json:decode(D).
+
+%%==============================================================================
+%% @doc Decode JSON file
+%% @end
+-spec decode_file(list()) -> any().
+
+decode_file(F) when is_list(F) 
+    -> 
+        decode_file(F, []).
+
+%%==============================================================================
+%% @doc Decode JSON file with options
+%% @end
+-spec decode_file(list(), list()) -> any().
+
+decode_file(F, Opt) when is_list(F) ->
+    try
+        % Use raw reading, and use real error from read_file otherwise
+        B = case erl_prim_loader:get_file(F) of
+               error -> 
+                    {ok, BA} = file:read_file(F), BA;
+               {ok, BB, _} -> 
+                    BB
+          end,
+        argos:decode(B, Opt)
+    catch
+      throw:Term   
+        -> 
+            Term ;
+      error:Reason -> 
+        Err =   
+            case Reason of
+                {badmatch,{error,X}} 
+                    -> X;
+                _ -> Reason
+                end,
+                case proplists:get_value(return, Opt) of
+                    tuple -> {error, Err};
+                    _     -> throw(Err)
+            end
+   end.
+
