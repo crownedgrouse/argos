@@ -2,7 +2,8 @@
      {nl      = []     :: list()
      ,indent  = false
      ,records = []     :: list()
-     ,mode    = struct :: atom()
+     ,mode    = otp :: atom()
      ,binary  = undefined :: atom()
      ,aliases = []     :: list()
+     ,return  = undefined :: atom()
      }).

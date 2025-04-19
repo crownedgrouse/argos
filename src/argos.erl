@@ -54,6 +54,11 @@ decode(D) when is_list(D)
 %% 
 %% @end
 %% ----------------------------------
+
+decode(D, O) when is_list(D), is_list(O)
+    -> 
+        decode(erlang:list_to_binary(D), O);
+
 decode(D, O) when is_binary(D), is_list(O)
     -> 
         Opt = argos_lib:options(O),
@@ -61,7 +66,33 @@ decode(D, O) when is_binary(D), is_list(O)
 
 decode(D, Opt) when is_binary(D), is_record(Opt, opt)
     -> 
-        json:decode(D).
+        try 
+            Res =
+            case Opt#opt.mode of
+                otp
+                  -> 
+                    json:decode(D);
+                _ ->
+                    Mode = argos_lib:get_decoders(Opt),
+                    json:decode(D, [], Mode)
+            end,
+            throw(Res)
+        catch
+        throw:Result ->
+            case Opt#opt.return of
+                    tuple -> {ok, Result};
+                    stack -> {ok, Result};
+                    _     -> Result
+            end;
+        error:Reason:Stack -> 
+            case Opt#opt.return of
+                    tuple -> 
+                        {error, Reason};
+                    stack -> 
+                        {error, Reason, Stack};
+                    _     -> throw(Reason)
+            end
+        end.
 
 %%==============================================================================
 %% @doc Decode JSON file
@@ -75,9 +106,15 @@ decode_file(F) when is_list(F)
 %%==============================================================================
 %% @doc Decode JSON file with options
 %% @end
--spec decode_file(list(), list()) -> any().
 
-decode_file(F, Opt) when is_list(F) ->
+-spec decode_file(list(), tuple() | list()) -> any().
+
+decode_file(F, O) when is_list(F), is_list(O)
+    -> 
+        Opt = argos_lib:options(O),
+        decode_file(F, Opt);
+
+decode_file(F, Opt) when is_list(F),is_record(Opt, opt) ->
     try
         % Use raw reading, and use real error from read_file otherwise
         B = case erl_prim_loader:get_file(F) of
@@ -86,21 +123,16 @@ decode_file(F, Opt) when is_list(F) ->
                {ok, BB, _} -> 
                     BB
           end,
-        argos:decode(B, Opt)
+        throw(argos:decode(B, Opt))
     catch
-      throw:Term   
-        -> 
-            Term ;
-      error:Reason -> 
-        Err =   
-            case Reason of
-                {badmatch,{error,X}} 
-                    -> X;
-                _ -> Reason
-                end,
-                case proplists:get_value(return, Opt) of
-                    tuple -> {error, Err};
-                    _     -> throw(Err)
+        throw:Result ->
+            Result;
+        error:Reason:Stack -> 
+            case Opt#opt.return of
+                tuple -> {error, Reason};
+                stack -> 
+                        {error, Reason, Stack};
+                _     -> throw(Reason)
             end
    end.
 

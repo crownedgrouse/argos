@@ -1,7 +1,7 @@
 
 -module(argos_lib).
 
--export([options/1]).
+-export([options/1, get_decoders/1]).
 
 -include("argos.hrl").
 
@@ -49,12 +49,18 @@ options(O) ->
             _ -> undefined
 
        end,
+   U = case proplists:get_value(return, O) of
+            tuple    -> tuple ;
+            stack    -> stack ;
+            _        -> undefined
+       end,
    #opt{nl = N
       ,indent = I
       ,records = lists:flatten(R)
       ,mode = M
       ,binary = B
       ,aliases = lists:flatten(A)
+      ,return = U
       }.
 
 
@@ -137,3 +143,11 @@ extract_records_ac(Abs)
             end
             end, FF), [{N, F}]
         end, Raw).
+
+%% @doc Get decoders() map depending mode in config
+%% @end
+get_decoders(Opt) when is_record(Opt, opt)
+    ->
+        case Opt#opt.mode of
+            _ -> #{}
+        end.
