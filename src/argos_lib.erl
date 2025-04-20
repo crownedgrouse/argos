@@ -37,10 +37,11 @@ options(O) ->
             _  -> throw({0, {invalid, records}})
        end,
    M = case proplists:get_value(mode, O) of
-            map      -> map ;
-            proplist -> proplist ;
-            'record' -> 'record' ;
-            _        -> struct
+            'map'       -> 'map';
+            'proplist'  -> 'proplist' ;
+            'record'    -> 'record' ;
+            'struct'    -> 'struct';
+            _           -> 'otp'
        end,
    B = case proplists:get_value(binary, O) of
             k -> k ;
@@ -148,6 +149,94 @@ extract_records_ac(Abs)
 %% @end
 get_decoders(Opt) when is_record(Opt, opt)
     ->
+        %erlang:display(Opt),
         case Opt#opt.mode of
-            _ -> #{}
+            map      -> get_decs_mode(Opt);
+            proplist -> get_decs_mode(Opt);
+            record   -> get_decs_mode(Opt);
+            struct   -> get_decs_mode(Opt);
+            otp      -> get_decs_mode(Opt)
         end.
+
+%% @doc Get decoder() map customized by config
+%% @end
+get_decs_mode(Opt)
+    -> 
+        #{array_start   => argos_dec_array_start_fun(Opt),
+          array_push    => argos_dec_array_push_fun(Opt),
+          array_finish  => argos_dec_array_finish_fun(Opt),
+          object_start  => argos_dec_object_start_fun(Opt),
+          object_push   => argos_dec_object_push_fun(Opt),
+          object_finish => argos_dec_object_finish_fun(Opt),
+          float         => argos_dec_from_binary_float_fun(Opt),
+          integer       => argos_dec_from_binary_int_fun(Opt),
+          string        => argos_dec_from_binary_str_fun(Opt),
+          null          => argos_dec_null(Opt)}.
+
+%% @doc 
+%% @end
+argos_dec_array_start_fun(_Opt)
+    -> 
+        fun(_) -> [] end.
+
+argos_dec_array_push_fun(_Opt)
+    ->  
+        fun(Elem, Acc) -> [Elem | Acc] end.
+
+argos_dec_array_finish_fun(_Opt)
+    ->
+        fun(Acc, OldAcc) -> {lists:reverse(Acc), OldAcc} end.
+
+argos_dec_object_start_fun(_Opt)
+    ->
+        fun(_) -> [] end.
+
+argos_dec_object_push_fun(Opt)
+    ->
+        case Opt#opt.binary of
+            'k' when Opt#opt.mode =/= otp 
+                -> fun(Key, Value, Acc) -> 
+                        case Value of
+                            Value when is_list(Value) 
+                                ->  Value2 = lists:flatmap(fun(X)-> 
+                                                                case X of 
+                                                                    X when is_binary(X)
+                                                                        -> [binary:bin_to_list(X)];
+                                                                    X -> [X]
+                                                                end
+                                                           end, Value),
+                                    [{Key, Value2} | Acc] ;
+                            Value when is_binary(Value) 
+                                -> [{Key, binary:bin_to_list(Value)} | Acc] ;
+                            _   -> [{Key, Value} | Acc] 
+                        end
+                   end;
+            'v' when Opt#opt.mode =/= otp 
+                -> fun(Key, Value, Acc) ->  [{binary:bin_to_list(Key), Value} | Acc] end;
+            _   -> fun(Key, Value, Acc) -> [{Key, Value} | Acc] end
+        end.
+
+argos_dec_object_finish_fun(Opt)
+    -> 
+        case Opt#opt.mode of
+            'struct' 
+                ->  fun(Acc, OldAcc) -> {Acc, OldAcc} end ;
+            _   -> % Legacy
+                    fun(Acc, OldAcc) -> {maps:from_list(Acc), OldAcc} end
+        end.
+
+argos_dec_from_binary_float_fun(_Opt)
+    -> 
+        fun erlang:binary_to_float/1.
+
+argos_dec_from_binary_int_fun(_Opt)
+    -> 
+        fun erlang:binary_to_integer/1.
+
+argos_dec_from_binary_str_fun(_Opt)
+    ->
+       fun (Value) -> Value end.
+
+argos_dec_null(_Opt)
+    ->
+        null.

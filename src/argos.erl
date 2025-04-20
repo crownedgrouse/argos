@@ -41,6 +41,10 @@
 %% 
 %% @end
 %% ----------------------------------
+decode(D) when is_atom(D)
+    -> 
+        decode(erlang:atom_to_binary(D), []);
+
 decode(D) when is_binary(D)
     -> 
         decode(D, []);
@@ -54,6 +58,10 @@ decode(D) when is_list(D)
 %% 
 %% @end
 %% ----------------------------------
+
+decode(D, O) when is_atom(D) 
+    -> 
+        decode(erlang:atom_to_binary(D), O);
 
 decode(D, O) when is_list(D), is_list(O)
     -> 
