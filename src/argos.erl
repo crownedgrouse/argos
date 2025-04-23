@@ -75,6 +75,13 @@ decode(D, O) when is_binary(D), is_list(O)
 decode(D, Opt) when is_binary(D), is_record(Opt, opt)
     -> 
         try 
+            To = Opt#opt.to,
+            case argos_lib:valid_to_file(To) of
+                skip        -> ok ;
+                true        -> put(argos_to, To) ;
+                false       -> throw({error, "Invalid 'to' record definition dump file : cannot create"});
+                notempty    -> throw({error, "Invalid 'to' record definition dump file : not empty"})
+            end,
             Res =
             case Opt#opt.mode of
                 otp
@@ -100,6 +107,8 @@ decode(D, Opt) when is_binary(D), is_record(Opt, opt)
                         {error, Reason, Stack};
                     _     -> throw(Reason)
             end
+        after
+          erase(argos_to)
         end.
 
 %%==============================================================================

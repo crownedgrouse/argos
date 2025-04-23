@@ -1,7 +1,7 @@
 
 -module(argos_lib).
 
--export([options/1, get_decoders/1]).
+-export([options/1, get_decoders/1,valid_to_file/1]).
 
 -include("argos.hrl").
 
@@ -55,6 +55,10 @@ options(O) ->
             stack    -> stack ;
             _        -> undefined
        end,
+   T = case proplists:get_value(to, O) of
+            Z when is_list(Z) -> Z ;
+            _        -> []
+       end,
    #opt{nl = N
       ,indent = I
       ,records = lists:flatten(R)
@@ -62,6 +66,7 @@ options(O) ->
       ,binary = B
       ,aliases = lists:flatten(A)
       ,return = U
+      ,to = T
       }.
 
 
@@ -224,7 +229,8 @@ argos_dec_object_push_fun(Opt)
 argos_dec_object_finish_fun(Opt)
     -> 
     case Opt#opt.mode of
-        record -> fun(Acc, _OldAcc) -> {recordify(lists:reverse(Acc)), []} end ;
+        record -> fun(Acc, OldAcc) -> 
+            {recordify(lists:reverse(Acc), Opt), OldAcc} end ;
         _ ->  % other modes
         case Opt#opt.mode of
             'struct' 
@@ -256,12 +262,14 @@ argos_dec_null(_Opt)
 %% @end
 -spec cast(any()) -> any().
 
-cast(V) ->
-   case get(jason_binary) of
+cast(V) -> cast(V, binary).
+
+cast(V, Opt) when is_record(Opt, opt) ->
+   case Opt#opt.binary of
       v  -> cast(V, binary);
       kv -> cast(V, binary);
       _  -> cast(V, undefined)
-   end.
+   end;
 
 cast(V, binary) when is_binary(V) -> V ;
 
@@ -278,7 +286,7 @@ cast(V, _) when is_list(V)   ->
       false -> lists:flatmap(fun(Z) -> [cast(Z)] end, V);
       true  -> V
    end;
-cast(V, _)                   -> V .
+cast(V, _) -> V .
 
 %%==============================================================================
 %% @doc Append data to file
@@ -315,14 +323,14 @@ append_file(Filename, Bytes)
 %%==============================================================================
 %% @doc Translate to record
 %% @end
--spec recordify(list()) -> tuple().
+-spec recordify(list(), tuple()) -> tuple().
 
-recordify(Obj)
+recordify(Obj, Opt)
    when is_list(Obj)
    -> % Replace binary keys by atom key, and detect values types
       R = lists:flatmap(fun({K, V}) -> [{erlang:binary_to_atom(K, utf8), cast(V)}] end, Obj),
       T = lists:flatmap(fun({K, V}) -> [{K, detect_type(V)}] end, R),
-      CR = case get(argos_records) of
+      CR = case Opt#opt.records of
                [] -> '' ;
                undefined -> '' ;
                X  -> % Some records announced, check if we find it
@@ -332,7 +340,7 @@ recordify(Obj)
                            {F, _}     -> F
                      end
            end,
-      AR = case get(argos_aliases) of
+      AR = case Opt#opt.aliases of
                [] -> '' ;
                undefined -> '' ;
                Y  -> % Some records announced, check if we find it
@@ -343,11 +351,11 @@ recordify(Obj)
                      end
            end,
       CRX = case AR of
-                  '' -> case CR of
-                           '' -> '' ;
-                           _  -> CR
-                        end;
-                  _ -> AR
+              '' -> case CR of
+                       '' -> '' ;
+                       _  -> CR
+                    end;
+              _ -> AR
             end,
       % Create module for this record handling if not existing
       case get(argos_adhoc) of
@@ -505,3 +513,24 @@ parse_forms(C) ->
                              end;
               {error, EI, EL} -> erlang:display({scan_error, EI, EL, io_lib:format("~ts",[Code])}), false
          end.
+
+%%==============================================================================
+%% @doc Check if target file is valid (no exist or empty), upper dir. exists
+%% @end
+-spec valid_to_file(list()) -> atom().
+
+valid_to_file(To) when is_list(To) ->
+   case filelib:is_file(To) of
+      false -> case filelib:is_dir(filename:dirname(To)) of
+                  true  -> true ;
+                  false -> false
+               end;
+      true  -> case filelib:is_regular(To) of
+                  true -> case filelib:file_size(To) of
+                              0 -> true ;
+                              _ -> notempty
+                           end
+               end
+   end;
+
+valid_to_file(_) -> skip.
