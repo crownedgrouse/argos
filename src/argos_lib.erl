@@ -201,30 +201,33 @@ argos_dec_object_push_fun(Opt)
     case Opt#opt.mode of
         record -> 
             fun(Key, Value, Acc) -> [{Key, Value} | Acc] end ;
+        otp -> fun(Key, Value, Acc) -> [{Key, Value} | Acc] end ;
         _ -> % other modes
             case Opt#opt.binary of
-                'k' when Opt#opt.mode =/= otp 
+                'k' 
                     -> fun(Key, Value, Acc) -> 
-                            case Value of
-                                Value when is_list(Value) 
-                                    ->  Value2 = lists:flatmap(fun(X)-> 
-                                                                    case X of 
-                                                                        X when is_binary(X)
-                                                                            -> [binary:bin_to_list(X)];
-                                                                        X -> [X]
-                                                                    end
-                                                               end, Value),
-                                        [{Key, Value2} | Acc] ;
-                                Value when is_binary(Value) 
-                                    -> [{Key, binary:bin_to_list(Value)} | Acc] ;
-                                _   -> [{Key, Value} | Acc] 
-                            end
+                            [{Key, smart_binary_to_list_value(Value)} | Acc] 
                        end;
-                'v' when Opt#opt.mode =/= otp 
-                    -> fun(Key, Value, Acc) ->  [{binary:bin_to_list(Key), Value} | Acc] end;
-                _   -> fun(Key, Value, Acc) -> [{Key, Value} | Acc] end
+                'v' 
+                    -> fun(Key, Value, Acc) -> [{binary:bin_to_list(Key), Value} | Acc] end;
+                undefined 
+                    -> fun(Key, Value, Acc) -> [{binary:bin_to_list(Key), smart_binary_to_list_value(Value)} | Acc] end
             end
     end.
+
+smart_binary_to_list_value(V) when is_list(V)
+    -> 
+        lists:flatmap(fun(X)-> 
+                        case X of 
+                            X when is_binary(X)
+                                -> [binary:bin_to_list(X)];
+                            X -> [X]
+                        end
+                   end, V);
+smart_binary_to_list_value(V) when is_binary(V)       
+    ->   V;
+smart_binary_to_list_value(V)  
+    ->   V.
 
 argos_dec_object_finish_fun(Opt)
     -> 
@@ -236,7 +239,8 @@ argos_dec_object_finish_fun(Opt)
             'struct' 
                 ->  fun(Acc, OldAcc) -> {Acc, OldAcc} end ;
             _   -> % Legacy
-                    fun(Acc, OldAcc) -> {maps:from_list(Acc), OldAcc} end
+                    fun(Acc, OldAcc) -> 
+                        {maps:from_list(Acc),OldAcc}  end
         end
     end.
 

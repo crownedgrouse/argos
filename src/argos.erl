@@ -89,7 +89,8 @@ decode(D, Opt) when is_binary(D), is_record(Opt, opt)
                     json:decode(D);
                 _ ->
                     Mode = argos_lib:get_decoders(Opt),
-                    json:decode(D, [], Mode)
+                    {R, _Acc, _Bin } = json:decode(D, [], Mode),
+                    R
             end,
             throw(Res)
         catch
