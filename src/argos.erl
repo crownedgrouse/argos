@@ -74,15 +74,15 @@ decode(D, O) when is_binary(D), is_list(O)
 
 decode(D, Opt) when is_binary(D), is_record(Opt, opt)
     -> 
+        Start = os:timestamp(),
         try 
             To = Opt#opt.to,
             case argos_lib:valid_to_file(To) of
                 skip        -> ok ;
                 true        -> put(argos_to, To) ;
-                false       -> throw({error, "Invalid 'to' record definition dump file : cannot create"});
-                notempty    -> throw({error, "Invalid 'to' record definition dump file : not empty"})
+                {error, R}  -> error(R)
             end,
-            Res =
+            {Res, _, B} =
             case Opt#opt.mode of
                 otp
                   -> 
@@ -91,17 +91,22 @@ decode(D, Opt) when is_binary(D), is_record(Opt, opt)
                     Mode = argos_lib:get_decoders(Opt),
                     json:decode(D, [], Mode)
             end,
-            throw(Res)
+            throw({Res, B})
         catch
-        throw:{Result, Acc, Bin} ->
+        throw:{Result, Bin} ->
             case Opt#opt.return of
-                    tuple -> {ok, Result, #{acc=>Acc, bin=>Bin}};
+                    tuple -> {ok, Result, #{leftover=>Bin, duration=>timer:now_diff(os:timestamp(), Start) / 1000}};
                     _     -> Result
             end;
         error:Reason:Stack -> 
             case Opt#opt.return of
-                    tuple -> 
+                    tuple when is_atom(Reason) -> 
                         {error, Reason, #{stack => Stack}};
+                    tuple when is_tuple(Reason) -> 
+                        {ErrAtom, ErrBytes} = Reason,
+                        {error, ErrAtom, #{bytes => ErrBytes, stack => Stack}};
+                    tuple when is_map(Reason) -> 
+                        {error, map_get(code,Reason), #{errmsg => map_get(errmsg,Reason), stack => Stack}};
                     _     -> throw(Reason)
             end
         after

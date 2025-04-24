@@ -211,7 +211,8 @@ argos_dec_object_push_fun(Opt)
                 'v' 
                     -> fun(Key, Value, Acc) -> [{binary:bin_to_list(Key), Value} | Acc] end;
                 undefined 
-                    -> fun(Key, Value, Acc) -> [{binary:bin_to_list(Key), smart_binary_to_list_value(Value)} | Acc] end
+                    -> fun(Key, Value, Acc) -> [{binary:bin_to_list(Key), smart_binary_to_list_value(Value)} | Acc] end;
+                'kv' -> fun(Key, Value, Acc) -> [{Key, Value} | Acc] end
             end
     end.
 
@@ -225,7 +226,7 @@ smart_binary_to_list_value(V) when is_list(V)
                         end
                    end, V);
 smart_binary_to_list_value(V) when is_binary(V)       
-    ->   V;
+    ->   binary:bin_to_list(V);
 smart_binary_to_list_value(V)  
     ->   V.
 
@@ -523,18 +524,24 @@ parse_forms(C) ->
 %% @end
 -spec valid_to_file(list()) -> atom().
 
+valid_to_file([]) -> skip;
 valid_to_file(To) when is_list(To) ->
-   case filelib:is_file(To) of
-      false -> case filelib:is_dir(filename:dirname(To)) of
-                  true  -> true ;
-                  false -> false
-               end;
-      true  -> case filelib:is_regular(To) of
-                  true -> case filelib:file_size(To) of
-                              0 -> true ;
-                              _ -> notempty
-                           end
-               end
-   end;
+   case file:read_file_info(To) of
+     {error, Reason} when Reason =/= enoent -> {error, Reason};
+     _ -> 
+           case filelib:is_file(To) of
+              false -> case filelib:is_dir(filename:dirname(To)) of
+                          true  -> true ;
+                          false -> {error, #{code => enoent, errmsg=>"Upper directory to found"}}
+                       end;
+              true  -> case filelib:is_regular(To) of
+                          true -> case filelib:file_size(To) of
+                                      0 -> true ;
+                                      _ -> {error, #{code => efbig, errmsg => "File must be empty if already existing"}}
+                                   end;
+                          false -> {error, #{code => einval, errmsg=>"Not a regular file"}}
+                       end
+           end
+    end;
 
 valid_to_file(_) -> skip.
