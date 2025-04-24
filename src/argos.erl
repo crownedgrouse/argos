@@ -86,26 +86,22 @@ decode(D, Opt) when is_binary(D), is_record(Opt, opt)
             case Opt#opt.mode of
                 otp
                   -> 
-                    json:decode(D);
+                    json:decode(D, [], #{});
                 _ ->
                     Mode = argos_lib:get_decoders(Opt),
-                    {R, _Acc, _Bin } = json:decode(D, [], Mode),
-                    R
+                    json:decode(D, [], Mode)
             end,
             throw(Res)
         catch
-        throw:Result ->
+        throw:{Result, Acc, Bin} ->
             case Opt#opt.return of
-                    tuple -> {ok, Result};
-                    stack -> {ok, Result};
+                    tuple -> {ok, Result, #{acc=>Acc, bin=>Bin}};
                     _     -> Result
             end;
         error:Reason:Stack -> 
             case Opt#opt.return of
                     tuple -> 
-                        {error, Reason};
-                    stack -> 
-                        {error, Reason, Stack};
+                        {error, Reason, #{stack => Stack}};
                     _     -> throw(Reason)
             end
         after
