@@ -11,7 +11,14 @@
 %% @end
 -spec options(list()) -> tuple().
 
-options(O) ->
+options(O0) ->
+   O = case proplists:get_value(kv, O0) of
+            atom -> O0 ++ [{k, atom}, {v, atom}] ;
+            string -> O0 ++ [{k, string}, {v, string}] ;
+            binary ->  O0 ++ [{k, binary}, {v, binary}];
+            _ -> O0
+       end,
+   %
    I = case proplists:get_value(indent, O) of
             undefined -> "" ;
             false -> "" ;
@@ -43,12 +50,17 @@ options(O) ->
             'struct'    -> 'struct';
             _           -> 'otp'
        end,
-   B = case proplists:get_value(binary, O) of
-            k -> k ;
-            v -> v ;
-            kv -> kv ;
+   K = case proplists:get_value(k, O) of
+            atom -> atom ;
+            string -> string ;
+            binary -> binary ;
             _ -> undefined
-
+       end,
+   V = case proplists:get_value(v, O) of
+            atom -> atom ;
+            string -> string ;
+            binary -> binary ;
+            _ -> undefined
        end,
    U = case proplists:get_value(return, O) of
             tuple    -> tuple ;
@@ -63,7 +75,8 @@ options(O) ->
       ,indent = I
       ,records = lists:flatten(R)
       ,mode = M
-      ,binary = B
+      ,k = K
+      ,v = V
       ,aliases = lists:flatten(A)
       ,return = U
       ,to = T
@@ -199,50 +212,69 @@ argos_dec_object_start_fun(_Opt)
 argos_dec_object_push_fun(Opt)
     ->
     case Opt#opt.mode of
-        record -> 
-            fun(Key, Value, Acc) -> [{Key, Value} | Acc] end ;
         otp -> fun(Key, Value, Acc) -> [{Key, Value} | Acc] end ;
+        record -> 
+            fun(Key, Value, Acc) -> [{format(Key, Opt#opt.k, true), format(Value, Opt#opt.v, false)} | Acc] end ;
         _ -> % other modes
-            case Opt#opt.binary of
-                'k' 
-                    -> fun(Key, Value, Acc) -> 
-                            [{Key, smart_binary_to_list_value(Value)} | Acc] 
-                       end;
-                'v' 
-                    -> fun(Key, Value, Acc) -> [{binary:bin_to_list(Key), Value} | Acc] end;
-                undefined 
-                    -> fun(Key, Value, Acc) -> [{binary:bin_to_list(Key), smart_binary_to_list_value(Value)} | Acc] end;
-                'kv' -> fun(Key, Value, Acc) -> [{Key, Value} | Acc] end
+            fun(Key, Value, Acc) -> 
+                [{format(Key, Opt#opt.k, false), format(Value, Opt#opt.v, false)} | Acc] 
             end
     end.
 
+%% @doc 
+%% @end
+format(X, atom, Fatal) when is_binary(X) -> 
+    safe_list_to_atom(binary_to_list(X), Fatal);
+format(X, string, _)  -> 
+    smart_binary_to_list_value(X);
+format(X, _, _) -> 
+    X.
+
+%% @doc 
+%% @end
 smart_binary_to_list_value(V) when is_list(V)
     -> 
-        lists:flatmap(fun(X)-> 
-                        case X of 
-                            X when is_binary(X)
-                                -> [binary:bin_to_list(X)];
-                            X -> [X]
-                        end
-                   end, V);
+    lists:flatmap(fun(X)-> 
+                    case X of 
+                        X when is_binary(X)
+                            -> [binary:bin_to_list(X)];
+                        X -> [X]
+                    end
+               end, V);
 smart_binary_to_list_value(V) when is_binary(V)       
     ->   binary:bin_to_list(V);
 smart_binary_to_list_value(V)  
     ->   V.
 
+%% @doc 
+%% @end
+-spec safe_list_to_atom(list(), boolean()) -> atom() | binary().
+
+safe_list_to_atom(L, Fatal) ->
+   try
+        list_to_atom(L) 
+   catch
+       _:_:_ -> case Fatal of
+                false -> list_to_binary(L);
+                true  -> error(invalid_record_key)
+            end
+   end.
+
 argos_dec_object_finish_fun(Opt)
     -> 
     case Opt#opt.mode of
-        record -> fun(Acc, OldAcc) -> 
-            {recordify(lists:reverse(Acc), Opt), OldAcc} end ;
+        record ->  
+            fun(Acc, OldAcc) -> 
+                {recordify(lists:reverse(Acc), Opt), OldAcc} 
+            end ;
+        struct ->  
+            fun(Acc, OldAcc) -> 
+                {Acc, OldAcc} 
+            end ;
         _ ->  % other modes
-        case Opt#opt.mode of
-            'struct' 
-                ->  fun(Acc, OldAcc) -> {Acc, OldAcc} end ;
-            _   -> % Legacy
-                    fun(Acc, OldAcc) -> 
-                        {maps:from_list(Acc),OldAcc}  end
-        end
+            fun(Acc, OldAcc) -> 
+                {maps:from_list(Acc),OldAcc}  
+            end
     end.
 
 argos_dec_from_binary_float_fun(_Opt)
@@ -268,13 +300,6 @@ argos_dec_null(_Opt)
 -spec cast(any()) -> any().
 
 cast(V) -> cast(V, binary).
-
-cast(V, Opt) when is_record(Opt, opt) ->
-   case Opt#opt.binary of
-      v  -> cast(V, binary);
-      kv -> cast(V, binary);
-      _  -> cast(V, undefined)
-   end;
 
 cast(V, binary) when is_binary(V) -> V ;
 
@@ -308,22 +333,6 @@ append_file(Filename, Bytes)
             io:format("~s open error  reason:~s~n", [Filename, Reason])
     end.
 
-%%==============================================================================
-%% @doc Safe list to atom (check > 255 of UTF8)
-%% @end
-% -spec safe_list_to_atom(list()) -> atom() | binary().
-
-% safe_list_to_atom(L) ->
-%    R = case get(jason_binary) of
-%             k  -> list_to_binary(L);
-%             kv -> list_to_binary(L);
-%             _  ->  case catch list_to_atom(L) of
-%                         {'EXIT', _} -> list_to_binary(L);
-%                         X -> X
-%                      end
-%          end,
-%    R.
-
 %% RECORDS %%
 %%==============================================================================
 %% @doc Translate to record
@@ -333,7 +342,7 @@ append_file(Filename, Bytes)
 recordify(Obj, Opt)
    when is_list(Obj)
    -> % Replace binary keys by atom key, and detect values types
-      R = lists:flatmap(fun({K, V}) -> [{erlang:binary_to_atom(K, utf8), cast(V)}] end, Obj),
+      R = lists:flatmap(fun({K, V}) -> case K of K when is_atom(K) -> [{K, cast(V, record)}] ; _ -> [{erlang:binary_to_atom(K, utf8), cast(V, record)}] end end, Obj),
       T = lists:flatmap(fun({K, V}) -> [{K, detect_type(V)}] end, R),
       CR = case Opt#opt.records of
                [] -> '' ;

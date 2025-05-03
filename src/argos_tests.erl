@@ -5,9 +5,14 @@
 long_key()-> string:copies("a", 260).
 
 
-argos_decode_options_test() ->
-     ?assertEqual([{<<"ab">>,<<"cd">>}], argos:decode('{"ab": "cd"}'))
-     ,?assertEqual({ok,[{<<"ab">>,<<"cd">>}]}, argos:decode('{"ab": "cd"}', [{return, tuple}]))
+argos_decode_mode_test() ->
+      ?assertEqual(#{<<"ab">> => <<"cd">>}, argos:decode('{"ab": "cd"}'))
+     ,?assertEqual([{<<"ab">> , <<"cd">>}], argos:decode('{"ab": "cd"}', [{mode, struct}]))
+     ,?assertEqual(#{<<"ab">> => <<"cd">>}, argos:decode('{"ab": "cd"}', [{mode, map}]))
+     .
+
+argos_decode_return_test() ->
+      ?assertMatch({ok,#{<<"ab">> := <<"cd">>}, _}, argos:decode('{"ab": "cd"}', [{return, tuple}]))
      ,?assertMatch({1, _}, catch argos:decode('{"ab": "cd"'))
      ,?assertMatch({error,{1,_}}, argos:decode('{"ab": "cd"', [{return, tuple}]))
      ,?assertEqual(enoent, catch argos:decode_file("x"))
@@ -58,10 +63,9 @@ argos_decode_types_test() ->
 
 %% Struct
 %  mode=struct (default)
-% {"abc": "def"}       -> [{<<"abc">>,<<"def">>}]
-,?assertEqual([{<<"abc">>,<<"def">>}], argos:decode('{"abc": "def"}'))
 ,?assertEqual([{<<"abc">>,<<"def">>}], argos:decode('{"abc": "def"}', [{mode, struct}]))
-,?assertEqual([{<<"abc">>,<<"def">>}], argos:decode('{"abc": "def"}', [{mode, whatever}]))
+%% Default to OTP
+,?assertEqual(#{<<"abc">> => <<"def">>}, argos:decode('{"abc": "def"}', [{mode, whatever}]))
 %  mode=proplist
 % {"abc": "def"}       -> [{abc,"def"}]
 ,?assertEqual([{abc,"def"}], argos:decode('{"abc": "def"}', [{mode, proplist}]))
