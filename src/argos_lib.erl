@@ -45,9 +45,15 @@ options(O0) ->
        end,
    M = case proplists:get_value(mode, O) of
             'map'       -> 'map';
+            'm'         -> 'map';
             'proplist'  -> 'proplist' ;
+            'proplists' -> 'proplist' ;
+            'p'         -> 'proplist' ;
             'record'    -> 'record' ;
+            'records'   -> 'record' ;
+            'r'         -> 'record' ;
             'struct'    -> 'struct';
+            's'         -> 'struct';
             _           -> 'otp'
        end,
    K = case proplists:get_value(k, O) of
@@ -197,9 +203,12 @@ argos_dec_array_start_fun(_Opt)
     -> 
         fun(_) -> [] end.
 
-argos_dec_array_push_fun(_Opt)
+argos_dec_array_push_fun(Opt)
     ->  
-        fun(Elem, Acc) -> [Elem | Acc] end.
+        case Opt#opt.v of
+            undefined ->  fun(Elem, Acc) -> [Elem | Acc] end;
+            _         ->  fun(Elem, Acc) -> [format(Elem, Opt#opt.v, false) | Acc] end
+        end.
 
 argos_dec_array_finish_fun(_Opt)
     ->
@@ -213,8 +222,32 @@ argos_dec_object_push_fun(Opt)
     ->
     case Opt#opt.mode of
         otp -> fun(Key, Value, Acc) -> [{Key, Value} | Acc] end ;
+        proplist -> % struct with atom key and value as string by default
+            V = case Opt#opt.v of
+                undefined -> string ;
+                X -> X
+                end,
+            fun(Key, Value, Acc) -> 
+                [{format(Key, atom, true), format(Value, V, false)} | Acc] 
+            end;
+        map -> % map with atom key and value as string by default
+            K = case Opt#opt.k of
+                undefined -> atom ;
+                Y -> Y
+                end,
+            V = case Opt#opt.v of
+                undefined -> string ;
+                X -> X
+                end,
+            fun(Key, Value, Acc) -> 
+                [{format(Key, K, true), format(Value, V, false)} | Acc] 
+            end;
         record -> 
-            fun(Key, Value, Acc) -> [{format(Key, Opt#opt.k, true), format(Value, Opt#opt.v, false)} | Acc] end ;
+            V = case Opt#opt.v of
+                undefined -> string ;
+                X -> X
+                end,
+            fun(Key, Value, Acc) -> [{format(Key, atom, true), format(Value, V, false)} | Acc] end ;
         _ -> % other modes
             fun(Key, Value, Acc) -> 
                 [{format(Key, Opt#opt.k, false), format(Value, Opt#opt.v, false)} | Acc] 
@@ -224,7 +257,7 @@ argos_dec_object_push_fun(Opt)
 %% @doc 
 %% @end
 format(X, atom, Fatal) when is_binary(X) -> 
-    safe_list_to_atom(binary_to_list(X), Fatal);
+    safe_list_to_atom(smart_binary_to_list_value(X), Fatal);
 format(X, string, _)  -> 
     smart_binary_to_list_value(X);
 format(X, _, _) -> 
@@ -242,9 +275,10 @@ smart_binary_to_list_value(V) when is_list(V)
                     end
                end, V);
 smart_binary_to_list_value(V) when is_binary(V)       
-    ->   binary:bin_to_list(V);
+    ->   
+    binary:bin_to_list(V);
 smart_binary_to_list_value(V)  
-    ->   V.
+    -> V.
 
 %% @doc 
 %% @end
@@ -252,11 +286,11 @@ smart_binary_to_list_value(V)
 
 safe_list_to_atom(L, Fatal) ->
    try
-        list_to_atom(L) 
+        list_to_atom(L)
    catch
        _:_:_ -> case Fatal of
                 false -> list_to_binary(L);
-                true  -> error(invalid_record_key)
+                true  -> error(invalid_atom_key)
             end
    end.
 
@@ -267,9 +301,13 @@ argos_dec_object_finish_fun(Opt)
             fun(Acc, OldAcc) -> 
                 {recordify(lists:reverse(Acc), Opt), OldAcc} 
             end ;
+        proplist ->  
+            fun(Acc, OldAcc) -> 
+                {lists:reverse(Acc), OldAcc} 
+            end ;
         struct ->  
             fun(Acc, OldAcc) -> 
-                {Acc, OldAcc} 
+                {lists:reverse(Acc), OldAcc} 
             end ;
         _ ->  % other modes
             fun(Acc, OldAcc) -> 
@@ -295,30 +333,6 @@ argos_dec_null(_Opt)
 
 %% General %%
 %%==============================================================================
-%% @doc Cast data (list if printable, otherwise binary)
-%% @end
--spec cast(any()) -> any().
-
-cast(V) -> cast(V, binary).
-
-cast(V, binary) when is_binary(V) -> V ;
-
-cast(V, binary) when is_list(V) -> erlang:list_to_binary(V);
-
-cast(V, _) when is_binary(V) ->
-   X = erlang:binary_to_list(V),
-   case io_lib:printable_unicode_list(X) of
-      true  -> X;
-      false -> V
-   end;
-cast(V, _) when is_list(V)   ->
-   case io_lib:printable_unicode_list(V) of
-      false -> lists:flatmap(fun(Z) -> [cast(Z)] end, V);
-      true  -> V
-   end;
-cast(V, _) -> V .
-
-%%==============================================================================
 %% @doc Append data to file
 %% @end
 -spec append_file(list(), any()) -> atom().
@@ -342,9 +356,9 @@ append_file(Filename, Bytes)
 recordify(Obj, Opt)
    when is_list(Obj)
    -> % Replace binary keys by atom key, and detect values types
-      R = lists:flatmap(fun({K, V}) -> case K of K when is_atom(K) -> [{K, cast(V, record)}] ; _ -> [{erlang:binary_to_atom(K, utf8), cast(V, record)}] end end, Obj),
-      T = lists:flatmap(fun({K, V}) -> [{K, detect_type(V)}] end, R),
-      CR = case Opt#opt.records of
+    R = lists:flatmap(fun({K, V}) -> case K of K when is_atom(K) -> [{K, V}] ; _ -> [{erlang:binary_to_atom(K, utf8), V}] end end, Obj),
+    T = lists:flatmap(fun({K, V}) -> [{K, detect_type(V)}] end, R),
+    CR = case Opt#opt.records of
                [] -> '' ;
                undefined -> '' ;
                X  -> % Some records announced, check if we find it
@@ -354,7 +368,7 @@ recordify(Obj, Opt)
                            {F, _}     -> F
                      end
            end,
-      AR = case Opt#opt.aliases of
+    AR = case Opt#opt.aliases of
                [] -> '' ;
                undefined -> '' ;
                Y  -> % Some records announced, check if we find it
@@ -364,7 +378,7 @@ recordify(Obj, Opt)
                            {F2, _}     -> {alias, F2}
                      end
            end,
-      CRX = case AR of
+    CRX = case AR of
               '' -> case CR of
                        '' -> '' ;
                        _  -> CR
@@ -443,7 +457,7 @@ create_module(H, T, Mode) ->
                                       float   -> " = 0.0 " ;
                                       list    -> " = [] " ;
                                       literal -> " = null ";
-                                      binary  -> " = <<\"\">>";
+                                      binary  -> " = <<>>";
                                       datetime-> " = {{1970,1,1},{0,0,0}}"
                                  end,
                        Type1 =    case V of
