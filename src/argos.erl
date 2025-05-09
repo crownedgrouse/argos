@@ -30,6 +30,7 @@
 %-export([encode/1, encode/2]).
 -export([decode/1, decode/2]).
 -export([decode_file/1, decode_file/2]).
+-export([graphql/2, graphql/3]).
 %-export([encode_file/2, encode_file/3]).
 %-export([pp/1, pp/2, types/0]).
 %-export([dump/1, dump/2]).
@@ -155,3 +156,46 @@ decode_file(F, Opt) when is_list(F),is_record(Opt, opt) ->
             end
    end.
 
+%%==============================================================================
+%% @doc GraphQL query
+%% @end
+
+graphql(Q, J) -> 
+    graphql(Q, J, []).
+
+graphql(Q, _J, O) ->
+    Opt = argos_lib:options(O),
+    try 
+        {ok, L, _} = argos_graphql_lexer:string(Q),
+        {ok, R}  = argos_graphql_parser:parse(L),
+        R
+    catch
+        throw:Term   ->  Term ;
+        error:Reas:Stack -> 
+            case Reas of
+                {badmatch, {error,{{Line,Pos}, What, Detail}}}
+                    ->  case Opt#opt.return of
+                            tuple ->
+                                Errmsg = rewrite_errmsg(Detail),
+                                {error, parse_error, #{errmsg => Errmsg
+                                                     , line => Line
+                                                     , position => Pos
+                                                     , complainant => What
+                                                     , stack => Stack}};
+                             _ ->   
+                                throw(Reas)
+                        end ;
+                _ ->    case Opt#opt.return of
+                            tuple -> 
+                                {error, unexpected_error, #{errmsg => Reas, stack => Stack}};
+                             _ ->   
+                                throw(Reas)
+                        end 
+            end            
+    end.
+
+rewrite_errmsg([Left, []]) 
+    -> 
+        Left ++ "eof";
+rewrite_errmsg(E)
+    ->  lists:flatten(E).
