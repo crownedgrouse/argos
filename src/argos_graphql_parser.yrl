@@ -349,9 +349,9 @@ Type -> NamedType : named_type('$1', extract_location('$1')).
 Type -> ListType : list_type('$1', extract_location('$1')).
 Type -> NonNullType : non_null_type('$1', extract_location('$1')).
 NamedType -> Name : parse(#{'name' => extract_binary('$1')}, extract_location('$1')).
-ListType -> '[' Type ']' : parse(#{'type' => '$2'}, extract_location('$1')).
-NonNullType -> NamedType '!' : parse(#{'type' => '$1'}, extract_location('$1')).
-NonNullType -> ListType '!' : parse(#{'type' => '$1'}, extract_location('$1')).
+ListType -> '[' Type ']' : parse('$2', extract_location('$1')).
+NonNullType -> NamedType '!' : maps:put('null', false, parse('$1', extract_location('$1'))).
+NonNullType -> ListType '!' :  maps:put('empty', false, parse('$1', extract_location('$1'))).
 
 TypeDefinition -> ScalarTypeDefinition : scalar_type_definition('$1', extract_location('$1')).
 TypeDefinition -> ObjectTypeDefinition : object_type_definition('$1', extract_location('$1')).
@@ -446,89 +446,95 @@ Erlang code.
 
 -ignore_xref([return_error/2]).
 
-parse(X, Y) -> {X, Y}.
+parse(X, Y) -> add_location(X, Y).
 
-executable_definition(X, Y) -> {X, Y}.
+executable_definition(X, Y) -> add_location(X, Y).
 
-executable_directive_location(X, Y) -> {X, Y}.
+executable_directive_location(X, Y) -> add_location(X, Y).
 
-type_system_definition(X, Y) -> {X, Y}.
+type_system_definition(X, Y) -> add_location(X, Y).
 
-type_system_extension(X, Y) -> {X, Y}.
+type_system_extension(X, Y) -> add_location(X, Y).
 
-object(X, Y) -> {X, Y}.
+object(X, Y) -> add_location(X, Y).
 
-list(X, Y) -> {X, Y}.
+list(X, Y) -> add_location(X, Y).
 
-enum(X, Y) -> {X, Y}.
+enum(X, Y) -> add_location(X, Y).
 
-boolean(X, Y) -> {X, Y}.
+boolean(X, Y) -> add_location(X, Y).
 
-string(X, Y) -> {X, Y}.
+string(X, Y) -> add_location(X, Y).
 
-float(X, Y) -> {X, Y}.
+float(X, Y) -> add_location(X, Y).
 
-int(X, Y) -> {X, Y}.
+int(X, Y) -> add_location(X, Y).
 
-variable(X, Y) -> {X, Y}.
+variable(X, Y) -> add_location(X, Y).
 
-type_extension(X, Y) -> {X, Y}.
+type_extension(X, Y) -> add_location(X, Y).
 
-schema_extension(X, Y) -> {X, Y}.
+schema_extension(X, Y) -> add_location(X, Y).
 
-directive_definition(X, Y) -> {X, Y}.
+directive_definition(X, Y) -> add_location(X, Y).
 
-type_definition(X, Y) -> {X, Y}.
+type_definition(X, Y) -> add_location(X, Y).
 
-schema_definition(X, Y) -> {X, Y}.
+schema_definition(X, Y) -> add_location(X, Y).
 
-input_object_type_extension(X, Y) -> {X, Y}.
+input_object_type_extension(X, Y) -> add_location(X, Y).
 
-enum_type_extension(X, Y) -> {X, Y}.
+enum_type_extension(X, Y) -> add_location(X, Y).
 
-union_type_extension(X, Y) -> {X, Y}.
+union_type_extension(X, Y) -> add_location(X, Y).
 
-interface_type_extension(X, Y) -> {X, Y}.
+interface_type_extension(X, Y) -> add_location(X, Y).
 
-object_type_extension(X, Y) -> {X, Y}.
+object_type_extension(X, Y) -> add_location(X, Y).
 
-scalar_type_extension(X, Y) -> {X, Y}.
+scalar_type_extension(X, Y) -> add_location(X, Y).
 
-input_object_type_definition(X, Y) -> {X, Y}.
+input_object_type_definition(X, Y) -> add_location(X, Y).
 
-enum_type_definition(X, Y) -> {X, Y}.
+enum_type_definition(X, Y) -> add_location(X, Y).
 
-union_type_definition(X, Y) -> {X, Y}.
+union_type_definition(X, Y) -> add_location(X, Y).
 
-interface_type_definition(X, Y) -> {X, Y}.
+interface_type_definition(X, Y) -> add_location(X, Y).
 
-object_type_definition(X, Y) -> {X, Y}.
+object_type_definition(X, Y) -> add_location(X, Y).
 
-scalar_type_definition(X, Y) -> {X, Y}.
+scalar_type_definition(X, Y) -> add_location(X, Y).
 
-non_null_type(X, Y) -> {X, Y}.
+non_null_type(X, Y) -> add_location(X#{'null' => false}, Y).
 
-list_type(X, Y) -> {X, Y}.
+list_type(X, Y) -> add_location(X, Y).
 
-named_type(X, Y) -> {X, Y}.
+named_type(X, Y) -> add_location(X, Y).
 
-inline_fragment(X, Y) -> {X, Y}.
+inline_fragment(X, Y) -> add_location(X, Y).
 
-fragment_spread(X, Y) -> {X, Y}.
+fragment_spread(X, Y) -> add_location(X, Y).
 
-field(X, Y) -> {X, Y}.
+field(X, Y) -> add_location(X, Y).
 
-fragment_definition(X, Y) -> {X, Y}.
+fragment_definition(X, Y) -> add_location(X, Y).
 
-operation_definition(X, Y) -> {X, Y}.
+operation_definition(X, Y) -> add_location(X, Y).
 
-type_system_directive_location(X, Y) -> {X, Y}.
+type_system_directive_location(X, Y) -> add_location(X, Y).
 
 unicode_binary(X) -> X.  %TODO
 
 name_from_string(X) -> X.  %TODO
 
 null(X) -> X.  %TODO
+
+% smart add location
+add_location(X, Y) when is_map(X)
+  -> X#{location => Y} ;
+add_location(X, Y) 
+  -> {X, Y}.
 
 % Line-Level Utilities
 
@@ -540,6 +546,10 @@ extract_location({_Token, {Line, Column}, _Value}) ->
 extract_location(Record) when is_tuple(Record) andalso tuple_size(Record) >= 2 andalso is_atom(element(1, Record)) andalso is_tuple(element(2, Record)) andalso tuple_size(element(2, Record)) =:= 2 ->
   {Line, Column} = element(2, Record),
   erl_anno:new({Line, Column});
+extract_location(X) when is_map(X) ->
+  maps:get(location, X);
+extract_location([X | _]) when is_map(X) ->
+  maps:get(location, X);
 extract_location([Record | _]) when is_tuple(Record) ->
   extract_location(Record).
 
