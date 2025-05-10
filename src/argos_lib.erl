@@ -52,8 +52,11 @@ options(O0) ->
             'record'    -> 'record' ;
             'records'   -> 'record' ;
             'r'         -> 'record' ;
-            'struct'    -> 'struct';
-            's'         -> 'struct';
+            'struct'    -> 'struct' ;
+            's'         -> 'struct' ;
+            'graphql'   -> 'graphql' ;
+            'gql'       -> 'graphql' ;
+            'g'         -> 'graphql' ;
             _           -> 'otp'
        end,
    K = case proplists:get_value(k, O) of

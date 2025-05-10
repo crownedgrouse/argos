@@ -171,31 +171,36 @@ graphql(Q, _J, O) ->
         R
     catch
         throw:Term   ->  Term ;
-        error:Reas:Stack -> 
+        error:Reas:Stack when Opt#opt.return =:= tuple -> 
             case Reas of
                 {badmatch, {error,{{Line,Pos}, What, Detail}}}
-                    ->  case Opt#opt.return of
-                            tuple ->
-                                Errmsg = rewrite_errmsg(Detail),
-                                {error, parse_error, #{errmsg => Errmsg
+                    ->  Errmsg = rewrite_errmsg(Detail),
+                        {error, parse_error, #{errmsg => Errmsg
                                                      , line => Line
                                                      , position => Pos
                                                      , complainant => What
-                                                     , stack => Stack}};
-                             _ ->   
-                                throw(Reas)
-                        end ;
-                _ ->    case Opt#opt.return of
-                            tuple -> 
-                                {error, unexpected_error, #{errmsg => Reas, stack => Stack}};
-                             _ ->   
-                                throw(Reas)
-                        end 
-            end            
+                                                     , stack => Stack}}
+                            
+                        ;
+                {badmatch,{error,{Line, What, Detail},_}}
+                    ->  Errmsg = rewrite_errmsg(Detail),
+                        {error, parse_error, #{errmsg => Errmsg
+                                                     , line => Line
+                                                     , complainant => What
+                                                     , stack => Stack}}
+                            
+                        ;
+                _   ->  {error, unexpected_error, #{errmsg => Reas, stack => Stack}}                            
+            end;
+        error:Reas:_ -> throw(Reas)           
     end.
 
 rewrite_errmsg([Left, []]) 
     -> 
         Left ++ "eof";
+rewrite_errmsg({Left, Right}) 
+    ->  rewrite_errmsg(io_lib:format("~p : ~p", [Left, Right])) ;    
+rewrite_errmsg(E) when is_list(E)
+    ->  lists:flatten(E);
 rewrite_errmsg(E)
-    ->  lists:flatten(E).
+    -> E.
