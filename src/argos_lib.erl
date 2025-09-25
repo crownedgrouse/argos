@@ -1,7 +1,7 @@
 
 -module(argos_lib).
 
--export([options/1, get_decoders/1,valid_to_file/1]).
+-export([options/1, get_decoders/1,valid_to_file/1, append_file/2]).
 
 -include("argos.hrl").
 
@@ -182,7 +182,8 @@ get_decoders(Opt) when is_record(Opt, opt)
             proplist -> get_decs_mode(Opt);
             record   -> get_decs_mode(Opt);
             struct   -> get_decs_mode(Opt);
-            otp      -> get_decs_mode(Opt)
+            otp      -> get_decs_mode(Opt);
+            graphql  -> get_decs_mode(Opt)
         end.
 
 %% @doc Get decoder() map customized by config
@@ -304,6 +305,10 @@ argos_dec_object_finish_fun(Opt)
             fun(Acc, OldAcc) -> 
                 {recordify(lists:reverse(Acc), Opt), OldAcc} 
             end ;
+        graphql ->  
+            fun(Acc, OldAcc) -> 
+                {recordify(lists:reverse(Acc), Opt), OldAcc} 
+            end ;
         proplist ->  
             fun(Acc, OldAcc) -> 
                 {lists:reverse(Acc), OldAcc} 
@@ -400,7 +405,7 @@ recordify(Obj, Opt)
                            true  -> ok ;
                            false -> % Check if module is already loaded from a former dump on disk
                                     case code:is_loaded(Aliase) of
-                                       false -> create_module(Aliase, T, true) ;
+                                       false -> create_module(Aliase, T, true, Opt#opt.mode) ;
                                        _     -> ok
                                     end
                      end,
@@ -409,7 +414,7 @@ recordify(Obj, Opt)
 
                      case lists:any(fun(X) -> case X of HH -> true; _ -> false end end, get(argos_adhoc)) of
                            true  -> ok ;
-                           false -> create_module(HH, T, false)
+                           false -> create_module(HH, T, false, Opt#opt.mode)
                      end,
                      HH;
                RN -> RN
@@ -435,17 +440,16 @@ detect_type(V) when is_tuple(V)   -> {record, element(1, V)}.
 %%==============================================================================
 %% @doc Create argonaut module for record handling
 %% @end
--spec create_module(atom(), list(), atom()) -> atom().
+-spec create_module(atom(), list(), boolean(), atom()) -> atom().
 
-create_module(H, T, Mode) ->
-  %erlang:display({H, T, Mode}),
+create_module(H, T, Aliase, Mode) ->
   % Module declaration
   M1 = parse_forms(io_lib:format("-module(~p).~n", [H])),
   {Ks, _Ts} = lists:unzip(T),
   M10 = parse_forms(io_lib:format("-argos(argonaut).~n", [])),
 
   % Functions export
-  M2 = parse_forms(io_lib:format("-export([new/0, fields/0, size/0, def/0, ~ts]).~n",
+  M2 = parse_forms(io_lib:format("-export([new/0, fields/0, size/0, def/0, schema/0, ~ts]).~n",
                     [string:join(lists:flatmap(fun(K) -> [io_lib:format("~p/1,~p/2", [K,K])] end, Ks), ", ")])),
 
   % Json types definition
@@ -454,21 +458,37 @@ create_module(H, T, Mode) ->
 
   % Record definition
   DefT = string:join(lists:flatmap(fun({K, V}) ->
-                       Def1  =    case V of
-                                      {record, R} -> io_lib:format(" = ~p:new() ", [R]) ;
-                                      integer -> " = 0 " ;
-                                      float   -> " = 0.0 " ;
-                                      list    -> " = [] " ;
-                                      literal -> " = null ";
-                                      binary  -> " = <<>>";
-                                      datetime-> " = {{1970,1,1},{0,0,0}}"
-                                 end,
-                       Type1 =    case V of
-                                      {record, A} -> "'" ++  atom_to_list(A) ++ "':'" ++ atom_to_list(A) ++ "'" ;
-                                      V when is_atom(V) -> atom_to_list(V)
-                                 end,
-                       [io_lib:format("~p ~s :: ~s()", [K, Def1, Type1])]
-                                               end, T), ", "),
+  Def1 = case V of
+              {record, R} -> io_lib:format(" = ~p:new() ", [R]) ;
+              integer -> " = 0 " ;
+              float   -> " = 0.0 " ;
+              list    -> " = [] " ;
+              literal -> " = null ";
+              binary  -> " = <<>>";
+              datetime-> " = {{1970,1,1},{0,0,0}}"
+            end,
+    Type1 = case V of
+                {record, A} -> "'" ++  atom_to_list(A) ++ "':'" ++ atom_to_list(A) ++ "'" ;
+                V when is_atom(V) -> atom_to_list(V)
+            end,
+    [io_lib:format("~p ~s :: ~s()", [K, Def1, Type1])]
+    end, T), ", "),
+    % GraphQL schema definition
+    DefS = string:join(lists:flatmap(fun({K, V}) ->
+    Type2 = case V of
+                {record, R} -> valid_gql_name(R) ;
+                integer -> "Int" ;
+                float   -> "Float" ;
+                list when K=="id";K=="ID";K=="Id"
+                        -> "ID";
+                list    -> "String" ;
+                literal -> "Boolean";
+                binary  -> "String";
+                datetime-> "Datetime"
+           end,
+     [io_lib:format(" ~ts: ~ts",[valid_gql_name(K), Type2])]          
+    end, T), "\n"),
+
   M40 = parse_forms(io_lib:format("-record(~p, {~ts}).~n", [H, DefT])),
 
   M41 = parse_forms(io_lib:format("-opaque ~p() :: #~p{}.~n", [H, H])),
@@ -478,11 +498,24 @@ create_module(H, T, Mode) ->
   M50 = parse_forms(io_lib:format("new() -> #~p{}.~n", [H])),
   M51 = parse_forms(io_lib:format("fields() -> record_info(fields, ~p).~n", [H])),
   M52 = parse_forms(io_lib:format("size()   -> record_info(size, ~p).~n", [H])),
+  M53 = parse_forms(io_lib:format("schema() -> ~p.~n",[DefS])),
 
   RecDef = io_lib:format("-record(~p, {~ts}).~n", [H, DefT]),
-  M53 = parse_forms(io_lib:format("def() -> \"-record(~p, {~ts}).\".~n", [H, DefT])),
+  GqlDef_ = io_lib:format("~ntype ~ts {~n~ts~n}~n",[valid_gql_name(H), DefS]),
+  % If an ID/id is detected, add automatically a Query type
+  GqlDef = case lists:filter(fun(X) -> case X of X when X=='id';X=='ID';X=='Id' -> true; X -> false end end, Ks) of
+                [] -> GqlDef_ ;
+                XL -> GqlDef_ ++ 
+                      string:join(
+                        lists:flatmap( 
+                            fun(Z) -> [io_lib:format("~ntype Query {~n ~ts(~ts: ID!): ~ts~n}~n", [valid_gql_name(H), Z, valid_gql_name(H)])]
+                            end, XL)
+                      , "\n")
+           end,
 
-  M54 = lists:flatmap(fun({K, Type}) ->
+  M54 = parse_forms(io_lib:format("def() -> \"-record(~p, {~ts}).\".~n", [H, DefT])),
+
+  M55 = lists:flatmap(fun({K, Type}) ->
                        G = case Type of
                                       {record, R} -> io_lib:format(",is_tuple(V),(~p == element(1, V)) ", [R]) ;
                                       integer -> ",is_integer(V) " ;
@@ -496,7 +529,7 @@ create_module(H, T, Mode) ->
                         parse_forms(io_lib:format("~p(R, V) when is_record(R, ~p)~s -> R#~p{~p = V}.~n",
                                                   [K, H, G, H, K]))] end, T),
   % Compile forms
-  Binary = case compile:forms(lists:flatten([M1,M10,M2,M3,M31,M40,M41,M42,M50,M51,M52,M53,M54]),[debug_info]) of
+  Binary = case compile:forms(lists:flatten([M1,M10,M2,M3,M31,M40,M41,M42,M50,M51,M52,M53,M54,M55]),[debug_info]) of
               {ok, _, B} -> B ;
               {ok, _, B, Warnings} -> io:format("Warning : ~p~n", [Warnings]), B ;
               error -> io:format("Error while compiling : ~p~n", [H]),
@@ -505,16 +538,18 @@ create_module(H, T, Mode) ->
                                          io:format("Warning : ~p~n", [Warnings]),
                                          <<"">>
            end,
-
   % Dump record def if requested
   _ = case get(argos_to) of
           undefined -> ok ;
-          File when is_list(File)     -> append_file(File, RecDef);
+          File when is_list(File), Mode=='graphql' ->
+                append_file(File, GqlDef);
+          File when is_list(File), Mode=='record' ->
+                append_file(File, RecDef);
           _ -> ok
       end,
 
   % Load module
-  Target = case Mode of
+  Target = case Aliase of
      true -> % Using aliases need to set a valid path in order to be able to dump them elsewhere
            Dir = code:priv_dir(argos),
            Dir1 = filename:join([Dir, "dump", atom_to_list(H)]),
@@ -529,6 +564,25 @@ create_module(H, T, Mode) ->
      {module, _}    -> put(argos_adhoc, lists:flatten(get(argos_adhoc) ++ [H])) ;
      {error, _What} -> ok
   end.
+
+%% @doc Fix invalid name from GraphQL perspective
+%% @end
+
+valid_gql_name(N) when is_atom(N)->
+    valid_gql_name(atom_to_list(N));
+valid_gql_name(N) when is_list(N)->
+    % Name must start with a Letter or underscode, then followed by Letter, Digit or Undescore
+    case re:run(N,"^[A-Za-z_]{1}[A-Za-z0-9_]{0,}$") of
+        {match, _} -> N;
+        nomatch -> % Invalid
+            % Test some way to fix
+            case re:run(N,"^.[A-Za-z0-9_]{0,}$") of
+                {match, _} -> 
+                    valid_gql_name("_"++N);
+                nomatch    -> 
+                    valid_gql_name(re:replace(N,"[^A-Za-z0-9_]", "_",[global, {return, list}]))
+            end
+    end.
 
 %%==============================================================================
 %% @doc Parse forms
