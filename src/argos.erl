@@ -32,7 +32,8 @@
 -export([decode_file/1, decode_file/2]).
 -export([graphql/2, graphql/3]).
 %-export([encode_file/2, encode_file/3]).
-%-export([pp/1, pp/2, types/0]).
+-export([pp/1, pp/2]).
+%-export([types/0]).
 %-export([dump/1, dump/2]).
 %-export([decode_stream/1, decode_stream/2]).
 
@@ -86,7 +87,7 @@ decode(D, Opt) when is_binary(D), is_record(Opt, opt)
                                           calendar:system_time_to_rfc3339(erlang:system_time(second)),
                                Header = case Opt#opt.mode of
                                             'graphql' -> "# "++Header_++"\n# From sample : "++get(argos_from)++" (crc32:"++get(argos_from_crc32)++")\n";
-                                            'record'  -> "% "++Header_++"\n% From sample : "++get(argos_from)++" (crc32:"++get(argos_from_crc32)++")\n" ;
+                                            'record'  -> "% "++Header_++"\n% From sample : "++get(argos_from)++" ("++get(argos_from_crc32)++")\n" ;
                                             _         -> Header_
                                         end,
                                 argos_lib:append_file(To, Header)
@@ -225,3 +226,24 @@ rewrite_errmsg(E) when is_list(E)
     ->  lists:flatten(E);
 rewrite_errmsg(E)
     -> E.
+
+%%==============================================================================
+%% @doc Pretty Print
+%% @end
+
+pp(Term) when is_map(Term) 
+    -> pp(Term, #{style => 'k&r', nl => "\n", tab =>"   "});
+pp(Json) 
+    -> pp(argos:decode(Json, [{mode, 'map'}])).
+
+pp(Term, Opt)
+    when is_map(Term),is_list(Opt)
+    -> 
+    pp(Term, maps:from_list(Opt));
+pp(Term, Opt) 
+    when is_map(Term),is_map(Opt) 
+    ->
+    argos_pp:print(Term, maps:merge(#{style => 'k&r', nl => "\n", indent => 3}, Opt));
+pp(Json, Opt)
+    ->
+    pp(argos:decode(Json, [{mode, 'map'}]), Opt).

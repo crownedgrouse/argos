@@ -498,7 +498,6 @@ create_module(H, T, Aliase, Mode) ->
   M50 = parse_forms(io_lib:format("new() -> #~p{}.~n", [H])),
   M51 = parse_forms(io_lib:format("fields() -> record_info(fields, ~p).~n", [H])),
   M52 = parse_forms(io_lib:format("size()   -> record_info(size, ~p).~n", [H])),
-  M53 = parse_forms(io_lib:format("schema() -> ~p.~n",[DefS])),
 
   RecDef = io_lib:format("-record(~p, {~ts}).~n", [H, DefT]),
   GqlDef_ = io_lib:format("~ntype ~ts {~n~ts~n}~n",[valid_gql_name(H), DefS]),
@@ -512,6 +511,8 @@ create_module(H, T, Aliase, Mode) ->
                             end, XL)
                       , "\n")
            end,
+
+  M53 = parse_forms(io_lib:format("schema() -> lists:flatten(~p).~n",[GqlDef])),
 
   M54 = parse_forms(io_lib:format("def() -> \"-record(~p, {~ts}).\".~n", [H, DefT])),
 
