@@ -26,7 +26,10 @@ format_value(Int, _Enc, _State) when is_integer(Int) ->
 format_value(Float, _Enc, _State) when is_float(Float) ->
     json:encode_float(Float);
 format_value(List, UserEnc, State) when is_list(List) ->
-    format_list(List, UserEnc, State);
+    case io_lib:printable_list(List) of
+        true  -> json:encode_binary(list_to_binary(List)) ;
+        false -> format_list(List, UserEnc, State)
+    end;
 format_value(Map, UserEnc, State) when is_map(Map) ->
     %% Ensure order of maps are the same in each export
     OrderedKV = maps:to_list(maps:iterator(Map, ordered)),
@@ -42,7 +45,11 @@ format_list([Head|Rest], UserEnc, #{level := Level, col := Col0, max := Max, sty
        is_binary(Head); %% Indent Strings
        Col0 > Max ->    %% Throw in the towel
             State = State1#{col := Len},
-            First = UserEnc(Head, UserEnc, State),
+            First = case Style of
+                        'gnu' -> UserEnc(Head, UserEnc, maps:update(level, maps:get(level, State0, 1) , State0));
+                        'whitesmiths' -> UserEnc(Head, UserEnc, maps:update(level, maps:get(level, State0, 1) , State0));
+                        _ -> UserEnc(Head, UserEnc, State)
+                    end,
             {_, IndLast} = indent(State0),
             [$[, IndentElement, First,
              format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
@@ -61,25 +68,45 @@ format_list([], _, _) ->
     <<"[]">>.
 
 format_tail([Head|Tail], Enc, #{max := Max, col := Col0, style := _Style} = State, [], IndentRow)
-  when Col0 < Max ->
+  when Col0 < Max -> 
     EncHead = Enc(Head, Enc, State),
     String = [$,|EncHead],
     Col = Col0 + 1 + erlang:iolist_size(EncHead),
     [String|format_tail(Tail, Enc, State#{col := Col}, [], IndentRow)];
-format_tail([Head|Tail], Enc, State, [], IndentRow) ->
+format_tail([Head|Tail], Enc, State, [], IndentRow) -> 
     EncHead = Enc(Head, Enc, State),
     String = [[$,|IndentRow]|EncHead],
     Col = erlang:iolist_size(String)-2,
     [String|format_tail(Tail, Enc, State#{col := Col}, [], IndentRow)];
-format_tail([Head|Tail], Enc, State, IndentAll, IndentRow) ->
-    %% These are handling their own indentation, so optimize away size calculation
+format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'allman' ->  
+    EncHead = Enc(Head, Enc, State),
+    String = [[$, | IndentAll]|EncHead],
+    [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
+format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'hortsmann' ->  
+    EncHead = Enc(Head, Enc, State),
+    String = [[IndentAll, $, | IndentAll]|EncHead],
+    [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
+format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'otbs' ->  
+    EncHead = Enc(Head, Enc, State),
+    String = [$,|EncHead],
+    [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
+format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'stroustrup' ->  
+    EncHead = Enc(Head, Enc, State),
+    String = [[IndentAll,$,]|EncHead],
+    [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
+format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'whitesmiths';Style =:= 'gnu' ->  
+    EncHead = Enc(Head, Enc, maps:update(level, (maps:get(level, State, 1) - 1), State)),
+    String = [[$, | IndentAll]| EncHead],
+    [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
+format_tail([Head|Tail], Enc, #{style := _Style} = State, IndentAll, IndentRow) -> 
     EncHead = Enc(Head, Enc, State),
     String = [[$,|IndentAll]|EncHead],
     [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
-format_tail([], _, _, _, _) ->
+format_tail([], _, _, _, _) -> 
     [].
 
-format_key_value_list(KVList, UserEnc, #{level := Level} = State) ->
+
+format_key_value_list(KVList, UserEnc, #{level := Level, style := _Style} = State) ->
     {_,Indent} = indent(State),
     NextState = State#{level := Level+1},
     {KISize, KeyIndent} = indent(NextState),
@@ -89,22 +116,24 @@ format_key_value_list(KVList, UserEnc, #{level := Level} = State) ->
                        ValState = NextState#{col := KISize + 2 + erlang:iolist_size(EncKey)},
                        [$, , KeyIndent, EncKey, ": " | UserEnc(Value, UserEnc, ValState)]
                end,
-    format_object(lists:map(EntryFun, KVList), Indent).
+    format_object(lists:map(EntryFun, KVList), Indent, State).
 
 
-format_object([], _) -> <<"{}">>;
-format_object([[_Comma,KeyIndent|Entry]], Indent) ->
+format_object([], _, _State) -> <<"{}">>;
+format_object([[_Comma,KeyIndent|Entry]], Indent, #{style := _Style} = _State) ->
     [_Key,_Colon|Value] = Entry,
     {_, Rest} = string:take(Value, [$\s,$\n]),
     [CP|_] = string:next_codepoint(Rest),
-    if CP =:= ${ ->
+    if CP =:= ${ -> 
             [${, KeyIndent, Entry, Indent, $}];
        CP =:= $[ ->
             [${, KeyIndent, Entry, Indent, $}];
        true ->
             ["{ ", Entry, " }"]
     end;
-format_object([[_Comma,KeyIndent|Entry] | Rest], Indent) ->
+format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := Style, indent := Ind} = _State) when Style =:= 'whitesmiths';Style =:= 'gnu' ->
+    [${, KeyIndent, Entry, Rest, Indent, lists:duplicate(Ind, " ") ,$}];
+format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := _Style} = _State) ->
     [${, KeyIndent, Entry, Rest, Indent, $}].
 
 indent(#{level := Level, indent := Indent}) ->
