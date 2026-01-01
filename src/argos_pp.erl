@@ -40,6 +40,8 @@ format_value(Other, _Enc, _State) ->
 format_list([Head|Rest], UserEnc, #{level := Level, col := Col0, max := Max, style := Style} = State0) ->
     State1 = State0#{level := Level+1},
     {Len, IndentElement} = indent(State1),
+    State2 = State0#{level := Level+2},
+    {_, IndentElement2} = indent(State2),
     if is_list(Head);   %% Indent list in lists
        is_map(Head);    %% Indent maps
        is_binary(Head); %% Indent Strings
@@ -47,13 +49,24 @@ format_list([Head|Rest], UserEnc, #{level := Level, col := Col0, max := Max, sty
             State = State1#{col := Len},
             First = case Style of
                         'gnu' -> UserEnc(Head, UserEnc, maps:update(level, maps:get(level, State0, 1) , State0));
-                        'whitesmiths' -> UserEnc(Head, UserEnc, maps:update(level, maps:get(level, State0, 1) , State0));
+                        'whitesmiths' -> UserEnc(Head, UserEnc, maps:update(level, maps:get(level, State1, 1) , State1));
                         _ -> UserEnc(Head, UserEnc, State)
                     end,
             {_, IndLast} = indent(State0),
-            [$[, IndentElement, First,
-             format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
-             IndLast, $] ];
+            case Style of
+            'allman' ->  
+                [IndLast, $[, IndentElement, First,
+                    format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
+                    IndLast, $] ];
+            'whitesmiths' ->  
+                [IndentElement, $[, IndentElement2, First,
+                    format_tail(Rest, UserEnc, State2, IndentElement2, IndentElement2),
+                    IndentElement, $] ];
+            _ -> 
+                [$[, IndentElement, First,
+                    format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
+                    IndLast, $] ]
+            end;
        true ->
             First = UserEnc(Head, UserEnc, State1),
             Col = Col0 + 1 + erlang:iolist_size(First),
@@ -80,7 +93,7 @@ format_tail([Head|Tail], Enc, State, [], IndentRow) ->
     [String|format_tail(Tail, Enc, State#{col := Col}, [], IndentRow)];
 format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'allman' ->  
     EncHead = Enc(Head, Enc, State),
-    String = [[$, | IndentAll]|EncHead],
+    String = [$, |EncHead],
     [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
 format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'hortsmann' ->  
     EncHead = Enc(Head, Enc, State),
@@ -120,19 +133,29 @@ format_key_value_list(KVList, UserEnc, #{level := Level, style := _Style} = Stat
 
 
 format_object([], _, _State) -> <<"{}">>;
-format_object([[_Comma,KeyIndent|Entry]], Indent, #{style := _Style} = _State) ->
+format_object([[_Comma,KeyIndent|Entry]], Indent, #{style := Style} = _State) -> % Top entry
     [_Key,_Colon|Value] = Entry,
     {_, Rest} = string:take(Value, [$\s,$\n]),
     [CP|_] = string:next_codepoint(Rest),
-    if CP =:= ${ -> 
-            [${, KeyIndent, Entry, Indent, $}];
+    if CP =:= ${ ->
+            case Style of
+                'whitesmiths' -> [ ${, KeyIndent, Entry, $\n, $}]  ;
+            _ -> 
+                [ ${, KeyIndent, Entry, Indent, $}]
+            end;
        CP =:= $[ ->
-            [${, KeyIndent, Entry, Indent, $}];
+            case Style of 
+                'allman' -> [Indent, ${, KeyIndent, Entry, Indent, $}]; 
+                'whitesmiths' -> [KeyIndent, ${, KeyIndent, Entry, KeyIndent, $}]; 
+                _ -> [ ${, KeyIndent, Entry, Indent, $}]
+            end;
        true ->
             ["{ ", Entry, " }"]
     end;
-format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := Style, indent := Ind} = _State) when Style =:= 'whitesmiths';Style =:= 'gnu' ->
-    [${, KeyIndent, Entry, Rest, Indent, lists:duplicate(Ind, " ") ,$}];
+format_object([[_Comma,KeyIndent|Entry] | Rest], _Indent, #{style := Style, indent := _Ind} = _State) when Style =:= 'whitesmiths';Style =:= 'gnu' ->
+    [${, KeyIndent, Entry, Rest, KeyIndent ,$}];
+format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := Style} = _State) when Style =:= 'allman' ->
+    [Indent,${, KeyIndent, Entry, Rest, Indent,$}];
 format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := _Style} = _State) ->
     [${, KeyIndent, Entry, Rest, Indent, $}].
 
