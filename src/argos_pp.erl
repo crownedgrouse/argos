@@ -58,6 +58,10 @@ format_list([Head|Rest], UserEnc, #{level := Level, col := Col0, max := Max, sty
                 [IndLast, $[, IndentElement, First,
                     format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
                     IndLast, $] ];
+            'hortsmann' ->  
+                [IndLast, $[, IndentElement, First,
+                    format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
+                    IndLast, $] ];
             'whitesmiths' ->  
                 [IndentElement, $[, IndentElement2, First,
                     format_tail(Rest, UserEnc, State2, IndentElement2, IndentElement2),
@@ -140,12 +144,14 @@ format_object([[_Comma,KeyIndent|Entry]], Indent, #{style := Style} = _State) ->
     if CP =:= ${ ->
             case Style of
                 'whitesmiths' -> [ ${, KeyIndent, Entry, $\n, $}]  ;
-            _ -> 
+                'hortsmann' -> [ Indent, ${, KeyIndent, Entry, $\n, $}]  ;
+            _ ->  
                 [ ${, KeyIndent, Entry, Indent, $}]
             end;
        CP =:= $[ ->
             case Style of 
                 'allman' -> [Indent, ${, KeyIndent, Entry, Indent, $}]; 
+                'hortsmann' -> [Indent, ${, KeyIndent, Entry, Indent, $}]; 
                 'whitesmiths' -> [KeyIndent, ${, KeyIndent, Entry, KeyIndent, $}]; 
                 _ -> [ ${, KeyIndent, Entry, Indent, $}]
             end;
@@ -156,6 +162,8 @@ format_object([[_Comma,KeyIndent|Entry] | Rest], _Indent, #{style := Style, inde
     [${, KeyIndent, Entry, Rest, KeyIndent ,$}];
 format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := Style} = _State) when Style =:= 'allman' ->
     [Indent,${, KeyIndent, Entry, Rest, Indent,$}];
+format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := Style} = _State) when Style =:= 'hortsmann' ->
+    [${, KeyIndent, Entry, Rest, Indent,$}];
 format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := _Style} = _State) ->
     [${, KeyIndent, Entry, Rest, Indent, $}].
 
