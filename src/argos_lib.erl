@@ -20,14 +20,12 @@ options(O0) ->
        end,
    %
    I = case proplists:get_value(indent, O) of
-            undefined -> "" ;
-            false -> "" ;
-            true  -> "   "
+            IO when is_integer(IO) -> IO ;
+            _  -> 3
        end,
-   N = case proplists:get_value(indent, O) of
-            undefined -> "" ;
-            false -> "" ;
-            true  -> "\n"
+   N = case proplists:get_value(nl, O) of
+            ON when is_list(ON) -> ON;
+            _  -> "\n"
        end,
    A = case proplists:get_value(aliases, O) of
             undefined -> [] ;
@@ -71,6 +69,20 @@ options(O0) ->
             binary -> binary ;
             _ -> undefined
        end,
+
+   S = case proplists:get_value(style, O) of
+            'a' -> 'allman';
+            'g' -> 'gnu' ;
+            'h' -> 'hortsmann';
+            'k' -> 'k&r' ;
+            'l' -> 'lisp' ;
+            'o' -> 'otbs' ;
+            'p' -> 'pico' ;
+            'r' -> 'ratliff';
+            's' -> 'stroustrup';
+            'w' -> 'whitesmiths' ;
+            SX -> SX
+       end,
    U = case proplists:get_value(return, O) of
             tuple    -> tuple ;
             stack    -> stack ;
@@ -88,6 +100,7 @@ options(O0) ->
       ,v = V
       ,aliases = lists:flatten(A)
       ,return = U
+      ,style = S
       ,to = T
       }.
 

@@ -55,7 +55,7 @@ format_list([Head|Rest], UserEnc, #{level := Level, col := Col0, max := Max, sty
             {_, IndLast} = indent(State0),
             case Style of
             'allman' ->  
-                [IndLast, $[, IndentElement, First,
+                [IndLast, $[, First,
                     format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
                     IndLast, $] ];
             'hortsmann' ->  
@@ -63,7 +63,7 @@ format_list([Head|Rest], UserEnc, #{level := Level, col := Col0, max := Max, sty
                     format_tail(Rest, UserEnc, State, IndentElement, IndentElement),
                     IndLast, $] ];
             'whitesmiths' ->  
-                [IndentElement, $[, IndentElement2, First,
+                [ IndentElement, $[, IndentElement2, First,
                     format_tail(Rest, UserEnc, State2, IndentElement2, IndentElement2),
                     IndentElement, $] ];
             _ -> 
@@ -109,7 +109,7 @@ format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) w
     [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
 format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'stroustrup' ->  
     EncHead = Enc(Head, Enc, State),
-    String = [[IndentAll,$,]|EncHead],
+    String = [[IndentAll,$,]| EncHead],
     [String|format_tail(Tail, Enc, State, IndentAll, IndentRow)];
 format_tail([Head|Tail], Enc, #{style := Style} = State, IndentAll, IndentRow) when Style =:= 'whitesmiths';Style =:= 'gnu' ->  
     EncHead = Enc(Head, Enc, maps:update(level, (maps:get(level, State, 1) - 1), State)),
@@ -131,7 +131,7 @@ format_key_value_list(KVList, UserEnc, #{level := Level, style := _Style} = Stat
     EntryFun = fun({Key, Value}) ->
                        EncKey = key(Key, EncKeyFun),
                        ValState = NextState#{col := KISize + 2 + erlang:iolist_size(EncKey)},
-                       [$, , KeyIndent, EncKey, ": " | UserEnc(Value, UserEnc, ValState)]
+                       [$,, KeyIndent, EncKey, ": " | UserEnc(Value, UserEnc, ValState)]
                end,
     format_object(lists:map(EntryFun, KVList), Indent, State).
 
@@ -141,14 +141,15 @@ format_object([[_Comma,KeyIndent|Entry]], Indent, #{style := Style} = _State) ->
     [_Key,_Colon|Value] = Entry,
     {_, Rest} = string:take(Value, [$\s,$\n]),
     [CP|_] = string:next_codepoint(Rest),
-    if CP =:= ${ ->
+    if CP =:= ${ -> % top object
             case Style of
-                'whitesmiths' -> [ ${, KeyIndent, Entry, $\n, $}]  ;
+                'whitesmiths' -> [Indent, ${, $\n, Entry, $\n, $}]  ;
+                'allman' -> [ Indent, ${, KeyIndent, Entry, $\n, $}]  ;
                 'hortsmann' -> [ Indent, ${, KeyIndent, Entry, $\n, $}]  ;
             _ ->  
                 [ ${, KeyIndent, Entry, Indent, $}]
             end;
-       CP =:= $[ ->
+       CP =:= $[ -> % "popup": {
             case Style of 
                 'allman' -> [Indent, ${, KeyIndent, Entry, Indent, $}]; 
                 'hortsmann' -> [Indent, ${, KeyIndent, Entry, Indent, $}]; 
@@ -158,10 +159,11 @@ format_object([[_Comma,KeyIndent|Entry]], Indent, #{style := Style} = _State) ->
        true ->
             ["{ ", Entry, " }"]
     end;
+% inside [ ]
 format_object([[_Comma,KeyIndent|Entry] | Rest], _Indent, #{style := Style, indent := _Ind} = _State) when Style =:= 'whitesmiths';Style =:= 'gnu' ->
-    [${, KeyIndent, Entry, Rest, KeyIndent ,$}];
+    [ ${, KeyIndent, Entry, Rest, KeyIndent ,$}];
 format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := Style} = _State) when Style =:= 'allman' ->
-    [Indent,${, KeyIndent, Entry, Rest, Indent,$}];
+    [ Indent,${, KeyIndent, Entry, Rest, Indent,$}];
 format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := Style} = _State) when Style =:= 'hortsmann' ->
     [${, KeyIndent, Entry, Rest, Indent,$}];
 format_object([[_Comma,KeyIndent|Entry] | Rest], Indent, #{style := _Style} = _State) ->

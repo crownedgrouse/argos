@@ -232,18 +232,18 @@ rewrite_errmsg(E)
 %% @end
 
 pp(Term) when is_map(Term) 
-    -> pp(Term, #{style => 'k&r', nl => "\n", tab =>"   "});
+    -> pp(Term, #{style => 'k&r', nl => "\n", indent => 3});
 pp(Json) 
     -> pp(argos:decode(Json, [{mode, 'map'}])).
 
 pp(Term, Opt)
     when is_map(Term),is_list(Opt)
     -> 
-    pp(Term, maps:from_list(Opt));
+    pp(Term, argos_lib:options(Opt));
 pp(Term, Opt) 
-    when is_map(Term),is_map(Opt) 
+    when is_map(Term),is_record(Opt,'opt') 
     ->
-    argos_pp:print(Term, maps:merge(#{style => 'k&r', nl => "\n", indent => 3}, Opt));
+    argos_pp:print(Term, #{style => Opt#opt.style, nl => Opt#opt.nl, indent => Opt#opt.indent });
 pp(Json, Opt)
     ->
     pp(argos:decode(Json, [{mode, 'map'}]), Opt).
